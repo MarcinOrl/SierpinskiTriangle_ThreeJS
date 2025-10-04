@@ -1,16 +1,15 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import './style.css';
 
 const container = document.getElementById('app');
 
-/* scena, kamera, renderer */
+/* --- scena, kamera, renderer --- */
 const scene = new THREE.Scene();
 
 const sizes = { width: window.innerWidth, height: window.innerHeight };
 const camera = new THREE.PerspectiveCamera(60, sizes.width / sizes.height, 0.1, 100);
 camera.position.set(2, 2, 4);
-camera.lookAt(0, 0, 0);
-
 scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -19,19 +18,31 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 container.appendChild(renderer.domElement);
 
-/* sześcian */
+/* --- sześcian --- */
 const geometry = new THREE.BoxGeometry(1, 1, 1);
 const material = new THREE.MeshStandardMaterial({ color: 0x4488ff, metalness: 0.2, roughness: 0.6 });
 const cube = new THREE.Mesh(geometry, material);
 scene.add(cube);
 
-/* oświetlenie */
+/* --- oświetlenie --- */
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 const dir = new THREE.DirectionalLight(0xffffff, 0.9);
 dir.position.set(5, 5, 5);
 scene.add(dir);
 
-/* resize */
+/* --- OrbitControls --- */
+const controls = new OrbitControls(camera, renderer.domElement);
+
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+controls.target.copy(cube.position);
+
+controls.minDistance = 2;
+controls.maxDistance = 10;
+controls.maxPolarAngle = Math.PI * 0.95;
+
+/* --- resize --- */
 window.addEventListener('resize', () => {
   sizes.width = window.innerWidth;
   sizes.height = window.innerHeight;
@@ -43,12 +54,16 @@ window.addEventListener('resize', () => {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 });
 
-/* animacja */
+/* --- animacja --- */
 const clock = new THREE.Clock();
 function tick() {
   const delta = clock.getDelta();
+
   cube.rotation.x += delta * 0.8;
   cube.rotation.y += delta * 1.2;
+
+  controls.update();
+
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
