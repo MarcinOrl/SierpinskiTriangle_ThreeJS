@@ -12,6 +12,8 @@ A 3D project built with **Three.js**, showcasing an **animated Sierpiński trian
    git clone https://github.com/MarcinOrl/SierpinskiTriangle_ThreeJS.git
 
    cd SierpinskiTriangle_ThreeJS
+
+   cd threejs-project
    ```
 
 2. **Install dependencies:**
