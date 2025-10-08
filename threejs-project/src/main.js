@@ -4,19 +4,24 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import './style.css';
 
-/* --- helper: Sierpinski subdivide --- */
-function subdivideTriangle(a, b, c, level, outTriangles) {
+/* --- helper: Sierpinski tetrahedron subdivide --- */
+function subdivideTetra(a, b, c, d, level, outTetras) {
   if (level === 0) {
-    outTriangles.push([a.clone(), b.clone(), c.clone()]);
+    outTetras.push([a.clone(), b.clone(), c.clone(), d.clone()]);
     return;
   }
-  const ab = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-  const bc = new THREE.Vector3().addVectors(b, c).multiplyScalar(0.5);
-  const ca = new THREE.Vector3().addVectors(c, a).multiplyScalar(0.5);
 
-  subdivideTriangle(a, ab, ca, level - 1, outTriangles);
-  subdivideTriangle(ab, b, bc, level - 1, outTriangles);
-  subdivideTriangle(ca, bc, c, level - 1, outTriangles);
+  const ab = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+  const ac = new THREE.Vector3().addVectors(a, c).multiplyScalar(0.5);
+  const ad = new THREE.Vector3().addVectors(a, d).multiplyScalar(0.5);
+  const bc = new THREE.Vector3().addVectors(b, c).multiplyScalar(0.5);
+  const bd = new THREE.Vector3().addVectors(b, d).multiplyScalar(0.5);
+  const cd = new THREE.Vector3().addVectors(c, d).multiplyScalar(0.5);
+
+  subdivideTetra(a, ab, ac, ad, level - 1, outTetras);
+  subdivideTetra(ab, b, bc, bd, level - 1, outTetras);
+  subdivideTetra(ac, bc, c, cd, level - 1, outTetras);
+  subdivideTetra(ad, bd, cd, d, level - 1, outTetras);
 }
 
 /* --- scena, kamera, renderer --- */
@@ -25,7 +30,7 @@ const scene = new THREE.Scene();
 
 const sizes = { width: window.innerWidth, height: window.innerHeight };
 const camera = new THREE.PerspectiveCamera(60, sizes.width / sizes.height, 0.1, 1000);
-camera.position.set(0, 0, 3);
+camera.position.set(0, 0, 4);
 scene.add(camera);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -37,10 +42,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
 /* --- światła --- */
-const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 2.5);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
 dirLight.position.set(5, 10, 5);
 dirLight.castShadow = true;
 dirLight.shadow.mapSize.width = 2048;
@@ -61,14 +66,14 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 1.2;
-controls.maxDistance = 10;
+controls.maxDistance = 20;
 controls.maxPolarAngle = Math.PI * 0.99;
 
-/* --- parametry i GUI --- */
+/* --- params & GUI --- */
 const params = {
-  level: 3,
+  level: 2,
   color: '#ff0000',
-  rotationSpeed: 0.4,
+  rotationSpeed: 0.3,
   autoRotateCamera: false,
   showEdges: true,
   frame: () => frameToGeometry(),
@@ -76,10 +81,8 @@ const params = {
 };
 
 const gui = new GUI();
-gui.add(params, 'level', 0, 6, 1).name('Level').onChange(() => regenerate());
-gui.addColor(params, 'color').name('Color').onChange((v) => {
-  if (material) material.color.set(v);
-});
+gui.add(params, 'level', 0, 8, 1).name('Level').onChange(() => regenerate());
+gui.addColor(params, 'color').name('Color').onChange((v) => { if (material) material.color.set(v); });
 gui.add(params, 'rotationSpeed', 0, 2, 0.01).name('Rotation speed');
 gui.add(params, 'autoRotateCamera').name('Auto-rotate cam').onChange(v => controls.autoRotate = v);
 gui.add(params, 'showEdges').name('Show edges').onChange(v => { if (edges) edges.visible = v; });
@@ -112,25 +115,36 @@ function disposeIfExists() {
   }
 }
 
-/* --- Sierpinski --- */
-function buildSierpinski(level, colorHex) {
-  const h = Math.sqrt(3);
-  const A = new THREE.Vector3(-1, -h / 3, 0);
-  const B = new THREE.Vector3(1, -h / 3, 0);
-  const C = new THREE.Vector3(0, (2 * h) / 3, 0);
+/* --- Sierpinski 3D (tetrahedra) --- */
+function buildSierpinski3D(level, colorHex) {
+  const s = 1.6; // skala tetrahedronu
+  const h = Math.sqrt(2 / 3) * s; // wysokość tetra
+  const A = new THREE.Vector3(0, h * 0.5, 0); // top
+  const B = new THREE.Vector3(-s / 2, -h * 0.5, s * (Math.sqrt(3) / 6));
+  const C = new THREE.Vector3(s / 2, -h * 0.5, s * (Math.sqrt(3) / 6));
+  const D = new THREE.Vector3(0, -h * 0.5, -s * (Math.sqrt(3) / 3));
 
-  const triangles = [];
-  subdivideTriangle(A, B, C, level, triangles);
+  const tetras = [];
+  subdivideTetra(A, B, C, D, level, tetras);
 
-  const triangleCount = triangles.length;
-  const positions = new Float32Array(triangleCount * 3 * 3);
-  let offset = 0;
-  for (let i = 0; i < triangleCount; i++) {
-    const tri = triangles[i];
-    for (let v = 0; v < 3; v++) {
-      positions[offset++] = tri[v].x;
-      positions[offset++] = tri[v].y;
-      positions[offset++] = tri[v].z;
+  const triCount = tetras.length * 4;
+  const positions = new Float32Array(triCount * 3 * 3);
+  let off = 0;
+  for (let i = 0; i < tetras.length; i++) {
+    const [a, b, c, d] = tetras[i];
+    const faces = [
+      [a, b, c],
+      [a, c, d],
+      [a, d, b],
+      [b, d, c]
+    ];
+    for (let f = 0; f < faces.length; f++) {
+      const face = faces[f];
+      for (let v = 0; v < 3; v++) {
+        positions[off++] = face[v].x;
+        positions[off++] = face[v].y;
+        positions[off++] = face[v].z;
+      }
     }
   }
 
@@ -138,8 +152,9 @@ function buildSierpinski(level, colorHex) {
   geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geom.computeBoundingSphere();
   geom.computeBoundingBox();
+  geom.computeVertexNormals();
 
-  material = new THREE.MeshStandardMaterial({ color: colorHex, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.7 });
+  material = new THREE.MeshStandardMaterial({ color: colorHex, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.5 });
   mesh = new THREE.Mesh(geom, material);
   mesh.castShadow = true;
   mesh.receiveShadow = false;
@@ -160,7 +175,7 @@ function buildSierpinski(level, colorHex) {
   const planeMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 1, metalness: 0 });
   ground = new THREE.Mesh(planeGeom, planeMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = minY - 0.15;
+  ground.position.y = minY - 0.5;
   ground.receiveShadow = true;
   ground.castShadow = false;
   scene.add(ground);
@@ -175,8 +190,8 @@ function frameToGeometry() {
   const radius = geom.boundingSphere.radius;
 
   controls.target.copy(center);
-  const distance = Math.max(1.0, radius * 2.5);
-  camera.position.set(center.x, center.y + radius * 0.2, center.z + distance);
+  const distance = Math.max(1.0, radius * 3.0);
+  camera.position.set(center.x + distance * 0.6, center.y + radius * 0.6, center.z + distance * 0.8);
   camera.updateProjectionMatrix();
   controls.update();
 }
@@ -187,7 +202,7 @@ function updateShadowCameraBounds() {
   const center = geom.boundingSphere.center;
   const radius = geom.boundingSphere.radius;
 
-  const pad = radius * 1.5;
+  const pad = radius * 1.8;
   const left = -pad, right = pad, top = pad, bottom = -pad;
   const near = 0.1;
   const far = Math.max(50, radius * 10);
@@ -215,17 +230,17 @@ function updateShadowCameraBounds() {
 
 /* --- reset kamery --- */
 function resetCamera() {
-  camera.position.set(0, 0, 3);
+  camera.position.set(0, 0, 4);
   controls.target.set(0, 0, 0);
   controls.update();
 }
 
-/* --- regeneracja --- */
+/* --- regenerate --- */
 function regenerate() {
-  const level = Math.min(Math.max(0, Math.floor(params.level)), 6);
+  const level = Math.min(Math.max(0, Math.floor(params.level)), 8);
   params.level = level;
   disposeIfExists();
-  buildSierpinski(level, params.color);
+  buildSierpinski3D(level, params.color);
   frameToGeometry();
 }
 
