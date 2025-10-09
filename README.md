@@ -1,6 +1,6 @@
-# Three.js – Sierpiński Triangle
+# Three.js – Sierpiński Tetrahedron
 
-A 3D project built with **Three.js**, showcasing an **animated Sierpiński triangle** with interactive controls (camera rotation, fractal level adjustment, color changes, etc.).
+A 3D project built with **Three.js**, showcasing an **animated Sierpiński Tetrahedron** with interactive controls (camera rotation, fractal level adjustment, color changes, explode animation, etc.).
 
 ---
 
