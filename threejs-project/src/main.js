@@ -56,16 +56,16 @@ scene.add(dirLight);
 
 /* --- zmienne globalne --- */
 let geom = null;
-let mesh = null;
-let edges = null;
 let material = null;
 let ground = null;
+let groupTetras = null;
+let tetraObjects = [];
 
 /* --- OrbitControls --- */
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 1.2;
+controls.minDistance = 1;
 controls.maxDistance = 20;
 controls.maxPolarAngle = Math.PI * 0.99;
 
@@ -76,36 +76,49 @@ const params = {
   rotationSpeed: 0.3,
   autoRotateCamera: false,
   showEdges: true,
+  explode: false,
+  explodeSpeed: 0.3,
+  explodeAmount: 0.1,
   frame: () => frameToGeometry(),
   resetCamera: () => resetCamera()
 };
 
 const gui = new GUI();
 gui.add(params, 'level', 0, 8, 1).name('Level').onChange(() => regenerate());
-gui.addColor(params, 'color').name('Color').onChange((v) => { if (material) material.color.set(v); });
+gui.addColor(params, 'color').name('Color').onChange((v) => {
+  if (material) material.color.set(v);
+});
 gui.add(params, 'rotationSpeed', 0, 2, 0.01).name('Rotation speed');
 gui.add(params, 'autoRotateCamera').name('Auto-rotate cam').onChange(v => controls.autoRotate = v);
-gui.add(params, 'showEdges').name('Show edges').onChange(v => { if (edges) edges.visible = v; });
+gui.add(params, 'showEdges').name('Show edges').onChange(v => {
+  tetraObjects.forEach(o => { if (o.edge) o.edge.visible = v; });
+});
+gui.add(params, 'explode').name('Explode');
+gui.add(params, 'explodeSpeed', 0.1, 3.0, 0.01).name('Explode speed');
+gui.add(params, 'explodeAmount', 0.0, 0.5, 0.01).name('Explode amount');
 gui.add(params, 'frame').name('Frame geometry');
 gui.add(params, 'resetCamera').name('Reset camera');
 
 /* --- dispose --- */
 function disposeIfExists() {
-  if (mesh) {
-    scene.remove(mesh);
-    if (mesh.geometry) mesh.geometry.dispose();
-    if (mesh.material) mesh.material.dispose();
-    mesh = null;
+  if (groupTetras) {
+    groupTetras.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material && child.material !== material) child.material.dispose();
+    });
+    scene.remove(groupTetras);
+    groupTetras = null;
   }
-  if (edges) {
-    scene.remove(edges);
-    if (edges.geometry) edges.geometry.dispose();
-    if (edges.material) edges.material.dispose();
-    edges = null;
-  }
-  if (geom) {
-    try { geom.dispose(); } catch (e) {}
-    geom = null;
+  tetraObjects.forEach(o => {
+    if (o.edge) {
+      if (o.edge.geometry) o.edge.geometry.dispose();
+      if (o.edge.material) o.edge.material.dispose();
+    }
+  });
+  tetraObjects = [];
+  if (material) {
+    material.dispose();
+    material = null;
   }
   if (ground) {
     scene.remove(ground);
@@ -113,13 +126,14 @@ function disposeIfExists() {
     if (ground.material) ground.material.dispose();
     ground = null;
   }
+  geom = null;
 }
 
 /* --- Sierpinski 3D (tetrahedra) --- */
 function buildSierpinski3D(level, colorHex) {
-  const s = 1.6; // skala tetrahedronu
-  const h = Math.sqrt(2 / 3) * s; // wysokość tetra
-  const A = new THREE.Vector3(0, h * 0.5, 0); // top
+  const s = 1.6;
+  const h = Math.sqrt(2 / 3) * s;
+  const A = new THREE.Vector3(0, h * 0.5, 0);
   const B = new THREE.Vector3(-s / 2, -h * 0.5, s * (Math.sqrt(3) / 6));
   const C = new THREE.Vector3(s / 2, -h * 0.5, s * (Math.sqrt(3) / 6));
   const D = new THREE.Vector3(0, -h * 0.5, -s * (Math.sqrt(3) / 3));
@@ -127,50 +141,93 @@ function buildSierpinski3D(level, colorHex) {
   const tetras = [];
   subdivideTetra(A, B, C, D, level, tetras);
 
-  const triCount = tetras.length * 4;
-  const positions = new Float32Array(triCount * 3 * 3);
-  let off = 0;
+  const centroids = [];
+  const allVerts = [];
   for (let i = 0; i < tetras.length; i++) {
     const [a, b, c, d] = tetras[i];
+    const centroid = new THREE.Vector3().addVectors(a, b).add(c).add(d).multiplyScalar(1 / 4);
+    centroids.push(centroid);
+    allVerts.push(a.clone(), b.clone(), c.clone(), d.clone());
+  }
+
+  const center = new THREE.Vector3();
+  centroids.forEach(ct => center.add(ct));
+  center.multiplyScalar(1 / Math.max(1, centroids.length));
+
+  let maxDist = 0;
+  let minY = Infinity;
+  allVerts.forEach(v => {
+    maxDist = Math.max(maxDist, v.distanceTo(center));
+    minY = Math.min(minY, v.y);
+  });
+
+  material = new THREE.MeshStandardMaterial({ color: colorHex, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.5 });
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x071a0f });
+  groupTetras = new THREE.Group();
+  tetraObjects = [];
+
+  for (let i = 0; i < tetras.length; i++) {
+    const [a, b, c, d] = tetras[i];
+    const centroid = centroids[i];
+
     const faces = [
       [a, b, c],
       [a, c, d],
       [a, d, b],
       [b, d, c]
     ];
+
+    const triCount = faces.length;
+    const positions = new Float32Array(triCount * 3 * 3);
+    let off = 0;
     for (let f = 0; f < faces.length; f++) {
       const face = faces[f];
       for (let v = 0; v < 3; v++) {
-        positions[off++] = face[v].x;
-        positions[off++] = face[v].y;
-        positions[off++] = face[v].z;
+        const rv = new THREE.Vector3().subVectors(face[v], centroid);
+        positions[off++] = rv.x;
+        positions[off++] = rv.y;
+        positions[off++] = rv.z;
       }
     }
+
+    const geomT = new THREE.BufferGeometry();
+    geomT.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geomT.computeVertexNormals();
+
+    const meshT = new THREE.Mesh(geomT, material);
+    meshT.castShadow = true;
+    meshT.receiveShadow = false;
+    meshT.position.copy(centroid);
+
+    const edgesGeom = new THREE.EdgesGeometry(geomT);
+    const edgeLine = new THREE.LineSegments(edgesGeom, lineMat);
+    edgeLine.visible = params.showEdges;
+    meshT.add(edgeLine);
+
+    groupTetras.add(meshT);
+
+    const dir = new THREE.Vector3().subVectors(centroid, center);
+    const dist = dir.length();
+    if (dist > 0.0001) dir.normalize();
+    else dir.set(0, 1, 0);
+
+    tetraObjects.push({
+      mesh: meshT,
+      originalPosition: centroid.clone(),
+      dir: dir.clone(),
+      dist,
+      edge: edgeLine
+    });
   }
 
-  geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geom.computeBoundingSphere();
-  geom.computeBoundingBox();
-  geom.computeVertexNormals();
+  scene.add(groupTetras);
 
-  material = new THREE.MeshStandardMaterial({ color: colorHex, side: THREE.DoubleSide, metalness: 0.1, roughness: 0.5 });
-  mesh = new THREE.Mesh(geom, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = false;
-  scene.add(mesh);
+  geom = {
+    boundingSphere: { center: center.clone(), radius: maxDist },
+    boundingBox: { min: new THREE.Vector3(-1, minY, -1), max: new THREE.Vector3(1, maxDist, 1) }
+  };
 
-  const edgesGeom = new THREE.EdgesGeometry(geom);
-  const edgesMat = new THREE.LineBasicMaterial({ color: 0x071a0f });
-  edges = new THREE.LineSegments(edgesGeom, edgesMat);
-  edges.visible = params.showEdges;
-  edges.castShadow = false;
-  scene.add(edges);
-
-  const bb = geom.boundingBox;
-  const minY = bb.min.y;
-  const planeSize = Math.max(6, geom.boundingSphere.radius * 6);
-
+  const planeSize = Math.max(6, maxDist * 6);
   const planeGeom = new THREE.PlaneGeometry(planeSize, planeSize);
   const planeMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 1, metalness: 0 });
   ground = new THREE.Mesh(planeGeom, planeMat);
@@ -263,10 +320,25 @@ controls.autoRotateSpeed = 2.0;
 const clock = new THREE.Clock();
 function tick() {
   const delta = clock.getDelta();
-  if (mesh) {
-    mesh.rotation.y += delta * params.rotationSpeed;
-    if (edges) edges.rotation.y = mesh.rotation.y;
+  const elapsed = clock.getElapsedTime();
+
+  if (groupTetras) groupTetras.rotation.y += delta * params.rotationSpeed;
+
+  if (params.explode && tetraObjects.length) {
+    const t = (Math.sin(elapsed * params.explodeSpeed * Math.PI * 2) + 1) * 0.5;
+    tetraObjects.forEach(o => {
+      const offset = t * params.explodeAmount * (1 + o.dist);
+      const newPos = new THREE.Vector3().copy(o.originalPosition).addScaledVector(o.dir, offset);
+      o.mesh.position.copy(newPos);
+    });
+  } else {
+    tetraObjects.forEach(o => {
+      o.mesh.position.copy(o.originalPosition);
+    });
   }
+
+  // sync edges rotation if you rotate group; edges are children of each mesh so they follow automatically
+
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
