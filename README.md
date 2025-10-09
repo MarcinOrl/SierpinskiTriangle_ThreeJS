@@ -9,9 +9,9 @@ A 3D project built with **Three.js**, showcasing an **animated Sierpiński Tetra
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/MarcinOrl/SierpinskiTriangle_ThreeJS.git
+   git clone https://github.com/MarcinOrl/SierpinskiTetrahedron_ThreeJS.git
 
-   cd SierpinskiTriangle_ThreeJS
+   cd SierpinskiTetrahedron_ThreeJS
 
    cd threejs-project
    ```
